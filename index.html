@@ -225,7 +225,7 @@
     }
 
     function buildPrompt() {
-        const maxHistoryLength = 8; // Limita o histórico para as últimas 8 interações
+        const maxHistoryLength = 15; // Limita o histórico para as últimas 15 interações
         const promptHistory = conversationHistory.slice(-maxHistoryLength);
         let prompt = `<s>[INST] Você é um bom assistente. Responda em português. [/INST]\n`;
 
@@ -244,29 +244,44 @@
         return response.trim();
     }
 
+    // Função para extrair palavras-chave de um texto
+    function extractKeywords(text) {
+        const words = text.split(' ');
+        const stopWords = new Set(['a', 'e', 'o', 'as', 'os', 'um', 'uma', 'de', 'da', 'do', 'em', 'no', 'na', 'para', 'por', 'com', 'que', 'é', 'não', 'sim', 'ao', 'à']);
+        const keywords = words.filter(word => !stopWords.has(word.toLowerCase()) && word.length > 2);
+        return keywords.join(' ');
+    }
+
     async function generateImageIfNeeded(botMessage) {
-        const tokenLimit = 100; // Defina o limite de tokens para gerar uma imagem
-        if (botMessage.split(' ').length > tokenLimit) {
-            const imageBlob = await queryImage({ inputs: botMessage });
-            const imageUrl = URL.createObjectURL(imageBlob);
-            addImageToHistory(imageUrl);
+        const tokenCount = botMessage.split(' ').length;
+        const tokenLimit = 50;
+        if (tokenCount > tokenLimit) {
+            const keywords = extractKeywords(botMessage);
+            const requestData = { inputs: keywords };
+            try {
+                const imageBlob = await queryImage(requestData);
+                const imageUrl = URL.createObjectURL(imageBlob);
+                addImageToHistory(imageUrl);
+            } catch (error) {
+                addMessage(`Desculpe, ocorreu um erro ao gerar a imagem: ${error.message}`, false);
+            }
         }
     }
 
     function addImageToHistory(imageUrl) {
-        const img = document.createElement('img');
-        img.src = imageUrl;
-        messagesContainer.appendChild(img);
+        const imageElement = document.createElement('img');
+        imageElement.src = imageUrl;
+        messagesContainer.appendChild(imageElement);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        conversationHistory.push({ role: 'assistant', content: `<img src="${imageUrl}" alt="Imagem gerada">` });
+        localStorage.setItem('conversationHistory', JSON.stringify(conversationHistory));
     }
 
     async function processBotResponse(typingIndicator) {
-        const prompt = buildPrompt();
-
         const requestData = {
-            inputs: prompt,
+            inputs: buildPrompt(),
             parameters: {
-                max_new_tokens: 500,
+                max_new_tokens: 900,
                 temperature: 0.7,
                 top_p: 0.9,
                 repetition_penalty: 1.1,
