@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot com Geração de Imagens</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background-color: #2c2c2c;
+            color: #f4f4f4;
+        }
+
+        #chat-container {
+            width: 100%;
+            max-width: 700px;
+            background-color: #3c3c3c;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #messages {
+            flex-grow: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 8px;
+            max-width: 90%;
+            word-wrap: break-word;
+        }
+
+        .user-message {
+            background-color: #366b80;
+            align-self: flex-end;
+            color: #f4f4f4;
+        }
+
+        .bot-message {
+            background-color: #444;
+            align-self: flex-start;
+            color: #f4f4f4;
+        }
+
+        .bot-message pre {
+            background-color: #555;
+            padding: 8px;
+            border-radius: 8px;
+            overflow-x: auto;
+            max-width: 100%;
+        }
+
+        .typing-indicator {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+        }
+
+        .typing-indicator > span {
+            margin-left: 10px;
+            background-color: #444;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-style: italic;
+        }
+
+        #input-container {
+            display: flex;
+            padding: 10px;
+            border-top: 1px solid #ccc;
+            background-color: #4c4c4c;
+        }
+
+        #user-input {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            outline: none;
+            background-color: #3c3c3c;
+            color: #f4f4f4;
+        }
+
+        #send-button {
+            padding: 10px 15px;
+            margin-left: 10px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        #send-button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        #clear-chat {
+            margin: 10px;
+            padding: 10px 15px;
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        #theme-toggle {
+            margin: 10px;
+            padding: 10px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .history img {
+            width: 100%;
+            height: auto;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="chat-container">
+    <div id="messages" aria-live="polite"></div>
+    <div id="input-container">
+        <input type="text" id="user-input" placeholder="Digite sua mensagem aqui..." aria-label="Mensagem">
+        <button id="send-button" disabled>Enviar</button>
+    </div>
+</div>
+<button id="clear-chat">Reiniciar Chat</button>
+<button id="theme-toggle">Alternar Tema</button>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
+<script>
+    const API_TEXT_URL = 'https://api-inference.huggingface.co/models/mistralai/Mixtral-8x7B-Instruct-v0.1';
+    const API_IMAGE_URL = 'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0';
+    const API_KEY = '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';
+    const messagesContainer = document.getElementById('messages');
+    const userInput = document.getElementById('user-input');
+    const sendButton = document.getElementById('send-button');
+    const clearChatButton = document.getElementById('clear-chat');
+    const themeToggleButton = document.getElementById('theme-toggle');
+
+    let conversationHistory = JSON.parse(localStorage.getItem('conversationHistory')) || [];
+
+    async function queryText(data) {
+        try {
+            const response = await fetch(API_TEXT_URL, {
+                headers: {
+                    Authorization: `Bearer ${API_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                method: 'POST',
+                body: JSON.stringify(data),
+            });
+            if (!response.ok) throw new Error(`Erro na requisição: ${response.status} ${response.statusText}`);
+            return await response.json();
+        } catch (error) {
+            console.error('Erro ao chamar a API:', error);
+            return { error: error.message };
+        }
+    }
+
+    async function queryImage(data) {
+        try {
+            const response = await fetch(API_IMAGE_URL, {
+                headers: {
+                    Authorization: `Bearer ${API_KEY}`
+                },
+                method: 'POST',
+                body: JSON.stringify(data),
+            });
+            if (!response.ok) throw new Error(`Erro na requisição: ${response.status} ${response.statusText}`);
+            return await response.blob();
+        } catch (error) {
+            console.error('Erro ao chamar a API:', error);
+            throw error;
+        }
+    }
+
+    function addMessage(messageContent, isUser) {
+        const messageElement = document.createElement('div');
+        messageElement.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+        if (isUser) {
+            messageElement.textContent = messageContent;
+        } else {
+            messageElement.innerHTML = messageContent;
+        }
+        messagesContainer.appendChild(messageElement);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    function addTypingIndicator() {
+        const typingIndicator = document.createElement('div');
+        typingIndicator.className = 'typing-indicator';
+        typingIndicator.innerHTML = `<span>digitando...</span>`;
+        messagesContainer.appendChild(typingIndicator);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        return typingIndicator;
+    }
+
+    function removeElement(element) {
+        if (element) messagesContainer.removeChild(element);
+    }
+
+    function buildPrompt() {
+        const maxHistoryLength = 8; // Limita o histórico para as últimas 8 interações
+        const promptHistory = conversationHistory.slice(-maxHistoryLength);
+        let prompt = `<s>[INST] Você é um bom assistente. Responda em português. [/INST]\n`;
+
+        promptHistory.forEach(msg => {
+            if (msg.role === 'user') {
+                prompt += `[INST] ${msg.content} [/INST] `;
+            } else {
+                prompt += `${msg.content} </s> <s>`;
+            }
+        });
+        prompt += `[INST] ${userInput.value.trim()} [/INST]`;
+        return prompt;
+    }
+
+    function cleanResponse(response) {
+        return response.trim();
+    }
+
+    async function generateImageIfNeeded(botMessage) {
+        const tokenLimit = 100; // Defina o limite de tokens para gerar uma imagem
+        if (botMessage.split(' ').length > tokenLimit) {
+            const imageBlob = await queryImage({ inputs: botMessage });
+            const imageUrl = URL.createObjectURL(imageBlob);
+            addImageToHistory(imageUrl);
+        }
+    }
+
+    function addImageToHistory(imageUrl) {
+        const img = document.createElement('img');
+        img.src = imageUrl;
+        messagesContainer.appendChild(img);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    async function processBotResponse(typingIndicator) {
+        const prompt = buildPrompt();
+
+        const requestData = {
+            inputs: prompt,
+            parameters: {
+                max_new_tokens: 500,
+                temperature: 0.7,
+                top_p: 0.9,
+                repetition_penalty: 1.1,
+                return_full_text: false
+            }
+        };
+
+        try {
+            const botResponse = await queryText(requestData);
+            let botMessage = 'Desculpe, não consegui gerar uma resposta.';
+
+            if (botResponse?.generated_text) {
+                botMessage = cleanResponse(botResponse.generated_text);
+            } else if (botResponse?.[0]?.generated_text) {
+                botMessage = cleanResponse(botResponse[0].generated_text);
+            }
+
+            // Verificar se a resposta contém código e formatá-lo adequadamente
+            if (botMessage.includes('<code>') || botMessage.includes('</code>')) {
+                botMessage = `<pre><code>${botMessage.replace(/<\/?code>/g, '')}</code></pre>`;
+            } else {
+                // Usar markdown para respostas mais ricas
+                botMessage = marked.parse(botMessage);
+            }
+
+            conversationHistory.push({ role: 'assistant', content: botMessage });
+            localStorage.setItem('conversationHistory', JSON.stringify(conversationHistory));
+            removeElement(typingIndicator);
+            addMessage(botMessage, false);
+
+            await generateImageIfNeeded(botMessage); // Adicionar imagem se necessário
+        } catch (error) {
+            addMessage(`Desculpe, ocorreu um erro: ${error.message}`, false);
+            removeElement(typingIndicator);
+        } finally {
+            sendButton.disabled = false;
+            userInput.focus();
+        }
+    }
+
+    function handleUserInput() {
+        const userMessage = userInput.value.trim();
+        if (userMessage === '') return;
+
+        conversationHistory.push({ role: 'user', content: userMessage });
+        localStorage.setItem('conversationHistory', JSON.stringify(conversationHistory));
+        addMessage(userMessage, true);
+        userInput.value = '';
+        sendButton.disabled = true;
+        const typingIndicator = addTypingIndicator();
+        processBotResponse(typingIndicator);
+    }
+
+    function clearChatHistory() {
+        conversationHistory = [];
+        localStorage.removeItem('conversationHistory');
+        messagesContainer.innerHTML = '';
+    }
+
+    function debounce(func, delay) {
+        let timeout;
+        return function (...args) {
+            const context = this;
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(context, args), delay);
+        };
+    }
+
+    function handleUserInputChange() {
+        sendButton.disabled = userInput.value.trim() === '';
+    }
+
+    function toggleTheme() {
+        const currentTheme = document.documentElement.style.getPropertyValue('--bg-color');
+        if (currentTheme === '#2c2c2c') {
+            document.documentElement.style.setProperty('--bg-color', '#f4f4f4');
+            document.documentElement.style.setProperty('--text-color', '#2c2c2c');
+            document.documentElement.style.setProperty('--container-bg-color', '#e0e0e0');
+            document.documentElement.style.setProperty('--input-bg-color', '#d0d0d0');
+            document.documentElement.style.setProperty('--input-inner-bg-color', '#c0c0c0');
+            document.documentElement.style.setProperty('--input-text-color', '#2c2c2c');
+            themeToggleButton.textContent = 'Tema Escuro';
+        } else {
+            document.documentElement.style.setProperty('--bg-color', '#2c2c2c');
+            document.documentElement.style.setProperty('--text-color', '#f4f4f4');
+            document.documentElement.style.setProperty('--container-bg-color', '#3c3c3c');
+            document.documentElement.style.setProperty('--input-bg-color', '#4c4c4c');
+            document.documentElement.style.setProperty('--input-inner-bg-color', '#3c3c3c');
+            document.documentElement.style.setProperty('--input-text-color', '#f4f4f4');
+            themeToggleButton.textContent = 'Tema Claro';
+        }
+    }
+
+    sendButton.addEventListener('click', debounce(handleUserInput, 300));
+    userInput.addEventListener('input', handleUserInputChange);
+    userInput.addEventListener('keypress', e => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleUserInput();
+        }
+    });
+
+    clearChatButton.addEventListener('click', clearChatHistory);
+    themeToggleButton.addEventListener('click', toggleTheme);
+
+    function loadChatHistory() {
+        if (conversationHistory.length > 0) {
+            conversationHistory.forEach(msg => {
+                addMessage(msg.content, msg.role === 'user');
+            });
+        }
+    }
+
+    loadChatHistory();
+</script>
+</body>
+</html>
