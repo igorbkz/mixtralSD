@@ -121,16 +121,6 @@
             cursor: pointer;
         }
 
-        #theme-toggle {
-            margin: 10px;
-            padding: 10px 15px;
-            background-color: #007bff;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-        }
-
         .history img {
             width: 100%;
             height: auto;
@@ -148,7 +138,6 @@
     </div>
 </div>
 <button id="clear-chat">Reiniciar Chat</button>
-<button id="theme-toggle">Alternar Tema</button>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
@@ -160,9 +149,8 @@
     const userInput = document.getElementById('user-input');
     const sendButton = document.getElementById('send-button');
     const clearChatButton = document.getElementById('clear-chat');
-    const themeToggleButton = document.getElementById('theme-toggle');
 
-    let conversationHistory = JSON.parse(localStorage.getItem('conversationHistory')) || [];
+    let conversationHistory = [];
 
     async function queryText(data) {
         try {
@@ -241,7 +229,7 @@
     }
 
     function cleanResponse(response) {
-        return response.trim();
+        return response.trim().replace(/<\/?s>/g, '');
     }
 
     // Função para extrair palavras-chave de um texto
@@ -253,6 +241,7 @@
     }
 
     async function generateImageIfNeeded(botMessage) {
+        // Verificar se é necessário gerar uma imagem
         const tokenCount = botMessage.split(' ').length;
         const tokenLimit = 50;
         if (tokenCount > tokenLimit) {
@@ -273,7 +262,7 @@
         imageElement.src = imageUrl;
         messagesContainer.appendChild(imageElement);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        conversationHistory.push({ role: 'assistant', content: `<img src="${imageUrl}" alt="Imagem gerada">` });
+        conversationHistory.push({ role:'assistant', content: `<img src="${imageUrl}" alt="Imagem gerada">` });
         localStorage.setItem('conversationHistory', JSON.stringify(conversationHistory));
     }
 
@@ -328,74 +317,48 @@
 
         conversationHistory.push({ role: 'user', content: userMessage });
         localStorage.setItem('conversationHistory', JSON.stringify(conversationHistory));
+
         addMessage(userMessage, true);
         userInput.value = '';
         sendButton.disabled = true;
+
         const typingIndicator = addTypingIndicator();
         processBotResponse(typingIndicator);
     }
 
-    function clearChatHistory() {
-        conversationHistory = [];
-        localStorage.removeItem('conversationHistory');
-        messagesContainer.innerHTML = '';
-    }
-
-    function debounce(func, delay) {
-        let timeout;
-        return function (...args) {
-            const context = this;
-            clearTimeout(timeout);
-            timeout = setTimeout(() => func.apply(context, args), delay);
-        };
-    }
-
-    function handleUserInputChange() {
+    userInput.addEventListener('input', () => {
         sendButton.disabled = userInput.value.trim() === '';
-    }
+    });
 
-    function toggleTheme() {
-        const currentTheme = document.documentElement.style.getPropertyValue('--bg-color');
-        if (currentTheme === '#2c2c2c') {
-            document.documentElement.style.setProperty('--bg-color', '#f4f4f4');
-            document.documentElement.style.setProperty('--text-color', '#2c2c2c');
-            document.documentElement.style.setProperty('--container-bg-color', '#e0e0e0');
-            document.documentElement.style.setProperty('--input-bg-color', '#d0d0d0');
-            document.documentElement.style.setProperty('--input-inner-bg-color', '#c0c0c0');
-            document.documentElement.style.setProperty('--input-text-color', '#2c2c2c');
-            themeToggleButton.textContent = 'Tema Escuro';
-        } else {
-            document.documentElement.style.setProperty('--bg-color', '#2c2c2c');
-            document.documentElement.style.setProperty('--text-color', '#f4f4f4');
-            document.documentElement.style.setProperty('--container-bg-color', '#3c3c3c');
-            document.documentElement.style.setProperty('--input-bg-color', '#4c4c4c');
-            document.documentElement.style.setProperty('--input-inner-bg-color', '#3c3c3c');
-            document.documentElement.style.setProperty('--input-text-color', '#f4f4f4');
-            themeToggleButton.textContent = 'Tema Claro';
-        }
-    }
-
-    sendButton.addEventListener('click', debounce(handleUserInput, 300));
-    userInput.addEventListener('input', handleUserInputChange);
-    userInput.addEventListener('keypress', e => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
+    userInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && !sendButton.disabled) {
             handleUserInput();
         }
     });
 
-    clearChatButton.addEventListener('click', clearChatHistory);
-    themeToggleButton.addEventListener('click', toggleTheme);
+    sendButton.addEventListener('click', handleUserInput);
 
-    function loadChatHistory() {
-        if (conversationHistory.length > 0) {
-            conversationHistory.forEach(msg => {
-                addMessage(msg.content, msg.role === 'user');
-            });
-        }
+    clearChatButton.addEventListener('click', () => {
+        conversationHistory = [];
+        localStorage.removeItem('conversationHistory');
+        messagesContainer.innerHTML = '';
+        userInput.value = '';
+        sendButton.disabled = true;
+    });
+
+    function loadConversationFromStorage() {
+        conversationHistory = JSON.parse(localStorage.getItem('conversationHistory')) || [];
+        conversationHistory.forEach((msg) => {
+            if (msg.role === 'user') {
+                addMessage(msg.content, true);
+            } else {
+                addMessage(msg.content, false);
+            }
+        });
     }
 
-    loadChatHistory();
+    loadConversationFromStorage();
 </script>
+
 </body>
 </html>
