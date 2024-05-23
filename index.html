@@ -68,15 +68,23 @@
         .typing-indicator {
             display: flex;
             align-items: center;
+            justify-content: center;
             margin: 10px 0;
+            width: 100%;
         }
 
-        .typing-indicator > span {
-            margin-left: 10px;
-            background-color: #444;
-            padding: 5px 10px;
-            border-radius: 5px;
-            font-style: italic;
+        .typing-indicator .loader {
+            border: 4px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 4px solid #444;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
 
         #input-container {
@@ -122,7 +130,7 @@
         }
 
         .history img {
-            width: 100%;
+            width: 80%; /* Diminuir o tamanho da imagem em 20% */
             height: auto;
             border-radius: 5px;
         }
@@ -131,7 +139,7 @@
 <body>
 
 <div id="chat-container">
-    <div id="messages" aria-live="polite"></div>
+<div id="messages" aria-live="polite"></div>
     <div id="input-container">
         <input type="text" id="user-input" placeholder="Digite sua mensagem aqui..." aria-label="Mensagem">
         <button id="send-button" disabled>Enviar</button>
@@ -202,7 +210,7 @@
     function addTypingIndicator() {
         const typingIndicator = document.createElement('div');
         typingIndicator.className = 'typing-indicator';
-        typingIndicator.innerHTML = `<span>digitando...</span>`;
+        typingIndicator.innerHTML = '<div class="loader"></div>';
         messagesContainer.appendChild(typingIndicator);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
         return typingIndicator;
@@ -214,8 +222,8 @@
 
     function buildPrompt() {
         const maxHistoryLength = 15; // Limita o histórico para as últimas 15 interações
-        const promptHistory = conversationHistory.slice(-maxHistoryLength);
-        let prompt = `<s>[INST] Você é um bom assistente. Responda em português. [/INST]\n`;
+        const promptHistory = conversationHistory.filter(msg => msg.role !== 'image').slice(-maxHistoryLength);
+        let prompt = `<s>[INST] Você é um bom assistente que responde em português. [/INST]\n`;
 
         promptHistory.forEach(msg => {
             if (msg.role === 'user') {
@@ -240,11 +248,11 @@
         return keywords.join(' ');
     }
 
-    async function generateImageIfNeeded(botMessage) {
-        // Verificar se é necessário gerar uma imagem
-        const tokenCount = botMessage.split(' ').length;
-        const tokenLimit = 50;
-        if (tokenCount > tokenLimit) {
+    async function
+generateImageIfNeeded(botMessage) {
+        // Verificar se a resposta contém mais de um parágrafo
+        const paragraphs = botMessage.split('\n').filter(p => p.trim().length > 0);
+        if (paragraphs.length > 1) {
             const keywords = extractKeywords(botMessage);
             const requestData = { inputs: keywords };
             try {
@@ -260,9 +268,12 @@
     function addImageToHistory(imageUrl) {
         const imageElement = document.createElement('img');
         imageElement.src = imageUrl;
+        imageElement.className = 'history';
         messagesContainer.appendChild(imageElement);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        conversationHistory.push({ role:'assistant', content: `<img src="${imageUrl}" alt="Imagem gerada">` });
+
+        // Armazenar a imagem apenas localmente, sem enviar para o modelo de linguagem
+        conversationHistory.push({ role: 'image', content: imageUrl });
         localStorage.setItem('conversationHistory', JSON.stringify(conversationHistory));
     }
 
@@ -346,18 +357,26 @@
         sendButton.disabled = true;
     });
 
-    function loadConversationFromStorage() {
-        conversationHistory = JSON.parse(localStorage.getItem('conversationHistory')) || [];
-        conversationHistory.forEach((msg) => {
+    function loadChatHistory() {
+        const savedHistory = JSON.parse(localStorage.getItem('conversationHistory') || '[]');
+        conversationHistory = savedHistory;
+
+        savedHistory.forEach(msg => {
             if (msg.role === 'user') {
                 addMessage(msg.content, true);
-            } else {
+            } else if (msg.role === 'assistant') {
                 addMessage(msg.content, false);
+            } else if (msg.role === 'image') {
+                const imageElement = document.createElement('img');
+                imageElement.src = msg.content;
+                imageElement.className = 'history';
+                messagesContainer.appendChild(imageElement);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
         });
     }
 
-    loadConversationFromStorage();
+    loadChatHistory();
 </script>
 
 </body>
